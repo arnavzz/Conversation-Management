@@ -1,75 +1,217 @@
-# Conversation-Management
+# Conversation Management & JSON Extraction with Groq (OpenAI-Compatible)
 
-## Colab Notebook
+A production-minded, Colab-ready project that demonstrates conversation memory, summarization strategies, and structured information extraction using the Groq API via the OpenAI-compatible SDK.
 
-- Open `Conversation_Management_and_Extraction.ipynb` in Google Colab.
-- Provide your `GROQ_API_KEY` when prompted (or set it in the Colab environment).
-- Optionally set `GROQ_MODEL` (default: `llama3-70b-8192`).
+## Highlights
 
-## Tasks Implemented
+- **Conversation management**: Maintain multi-turn context and keep it relevant
+- **Summarization**: Periodically compress history to preserve key facts and reduce tokens
+- **JSON schema classification & extraction**: Return structured outputs using OpenAI-style tool/function calling
+- **Groq API integration**: Uses OpenAI-compatible endpoints for fast inference
+- **Colab + GitHub workflow**: Easy to run, review, and version
 
-- Conversation management with:
-  - Truncation by last N turns
-  - Truncation by character limit
-  - Truncation by word limit
-  - Periodic summarization every k-th conversation cycle (history replacement)
-- JSON schema style extraction using OpenAI-style function calling on Groq API
-  - Extracts: name, email, phone, location, age
-  - Manual schema validation without external libraries
+---
 
-## How to Run
+## Tech Stack
 
-1. Open the notebook in Colab and run all cells top-to-bottom.
-2. Enter your Groq API key when prompted.
-3. Observe outputs for:
-   - Multiple conversation samples and different truncation settings
-   - Periodic summarization after every 3rd turn
-   - Parsing 3 chats and schema validation
+- **Python**: Standard library only (no external frameworks)
+- **Groq API**: OpenAI-compatible chat completions + function calling
+- **OpenAI SDK**: Python client pointed at Groq (`https://api.groq.com/openai/v1`)
+- **Google Colab**: Turnkey, reproducible runs
+- **GitHub**: Version control and review
 
-## Environment (.env)
+Industry-relevant skills covered: prompt engineering, conversation state management, model integration, function/tool calling, schema validation, reproducible workflows, and documentation.
 
-- Create a `.env` file in the project root with:
-  ```env
-  GROQ_API_KEY=your_key_here
-  GROQ_MODEL=llama3-70b-8192
-  ```
-- The notebook automatically loads `.env` (no external libraries) and falls back to a prompt if the key is missing.
-- `.env` is already listed in `.gitignore` so it won’t be committed.
+---
 
-Quick commands to create files:
-- PowerShell:
-  ```powershell
-  "GROQ_API_KEY=your_key_here`nGROQ_MODEL=llama3-70b-8192" | Out-File -Encoding utf8 .env
-  "GROQ_API_KEY=your_key_here`nGROQ_MODEL=llama3-70b-8192" | Out-File -Encoding utf8 .env.example
-  ```
-- Bash:
-  ```bash
-  printf "GROQ_API_KEY=your_key_here\nGROQ_MODEL=llama3-70b-8192\n" > .env
-  printf "GROQ_API_KEY=your_key_here\nGROQ_MODEL=llama3-70b-8192\n" > .env.example
-  ```
+## Setup & Installation
 
-## Local Usage
+### Option A — Run in Google Colab
 
-- Requires Python 3.10+
-- Install dependencies:
+1. Open the notebook `Conversation_Management_and_Extraction.ipynb` in Colab.
+2. Provide your Groq API key when prompted, or create a `.env` in Colab:
+   ```python
+   with open(".env", "w", encoding="utf-8") as f:
+       f.write("GROQ_API_KEY=YOUR_KEY\nGROQ_MODEL=llama-3.1-70b-versatile\n")
+   ```
+3. Runtime → Run all. The notebook will auto-install the OpenAI client and point it to Groq.
+
+### Option B — Run Locally
+
+- Requirements: Python 3.10+
+- Install:
   ```bash
   pip install -r requirements.txt
   ```
-- Set environment variables (alternative to .env):
-  ```powershell
-  $env:GROQ_API_KEY="YOUR_KEY"
-  $env:GROQ_MODEL="llama3-70b-8192"  # optional
+- Create `.env` in the project root:
+  ```env
+  GROQ_API_KEY=your_key_here
+  GROQ_MODEL=llama-3.1-70b-versatile
   ```
+- `.env` is already ignored by Git in `.gitignore`.
 
-## Git & GitHub
+---
 
-Initialize repo and push:
-```bash
-git init
-git add Conversation_Management_and_Extraction.ipynb README.md requirements.txt
-git commit -m "Initial commit: Colab notebook for conversation management and JSON extraction with Groq API"
- git branch -M main
- git remote add origin https://github.com/<your-username>/<your-repo>.git
- git push -u origin main
+## Usage Examples
+
+Below are minimal, self-contained examples mirroring the notebook.
+
+### 1) Conversation Management + Summarization
+
+```python
+from dataclasses import dataclass, field
+from typing import List, Dict
+from openai import OpenAI
+import os
+
+client = OpenAI(base_url="https://api.groq.com/openai/v1", api_key=os.environ["GROQ_API_KEY"])
+MODEL = os.getenv("GROQ_MODEL", "llama-3.1-70b-versatile")
+
+@dataclass
+class Message:
+    role: str
+    content: str
+
+@dataclass
+class ConversationManager:
+    model: str
+    summarize_every_k: int = 3
+    system_prompt: str = "You are a concise helpful assistant."
+    history: List[Message] = field(default_factory=list)
+    turn_counter: int = 0
+
+    def _messages(self) -> List[Dict[str, str]]:
+        msgs = [{"role": "system", "content": self.system_prompt}]
+        msgs += [{"role": m.role, "content": m.content} for m in self.history]
+        return msgs
+
+    def chat(self, user_text: str) -> str:
+        self.history.append(Message("user", user_text))
+        resp = client.chat.completions.create(model=self.model, messages=self._messages(), temperature=0.2)
+        out = resp.choices[0].message.content
+        self.history.append(Message("assistant", out))
+        self.turn_counter += 1
+        if self.summarize_every_k and self.turn_counter % self.summarize_every_k == 0:
+            self._summarize_and_replace()
+        return out
+
+    def _summarize_and_replace(self) -> None:
+        msgs = self._messages() + [{"role": "user", "content": "Summarize the conversation succinctly with key facts and constraints."}]
+        resp = client.chat.completions.create(model=self.model, messages=msgs, temperature=0.0)
+        summary = resp.choices[0].message.content
+        self.history = [Message("assistant", f"[Summary]\n{summary}")]
+
+    def truncate_last_n_turns(self, n: int) -> None:
+        keep = []
+        turns = 0
+        for m in reversed(self.history):
+            keep.append(m)
+            if m.role == "assistant":
+                turns += 1
+                if turns >= n:
+                    break
+        self.history = list(reversed(keep))
+
+cm = ConversationManager(model=MODEL, summarize_every_k=3)
+cm.history.append(Message("assistant", "Hi! I can help with your questions."))
+print(cm.chat("What's the weather in Paris?"))
+print(cm.chat("Recommend two museums to visit."))
+print(cm.chat("Book a table at 7pm near the Louvre."))  # triggers summarization
 ```
+
+Expected behavior:
+- After the 3rd user turn, history is replaced with a concise summary.
+- You can also call `truncate_last_n_turns(n)`, or implement char/word-based truncation.
+
+### 2) JSON Schema Classification & Extraction (Function Calling)
+
+```python
+schema = {
+    "type": "object",
+    "properties": {
+        "name": {"type": "string"},
+        "email": {"type": "string"},
+        "phone": {"type": "string"},
+        "location": {"type": "string"},
+        "age": {"type": "integer"},
+    },
+    "required": ["name", "email", "phone", "location", "age"],
+    "additionalProperties": False,
+}
+
+tools = [{
+    "type": "function",
+    "function": {
+        "name": "extract_contact_info",
+        "description": "Extract structured contact details from a chat.",
+        "parameters": schema,
+    },
+}]
+
+chat = """
+Hi I'm Alice Johnson. You can reach me at alice@example.com or +1-415-555-1212.
+I'm currently in San Francisco, and I'm 29 years old.
+""".strip()
+
+messages = [
+    {"role": "system", "content": "You extract structured data. Infer conservatively or leave blank."},
+    {"role": "user", "content": f"From this chat, extract fields using the tool:\n\n{chat}"},
+]
+
+resp = client.chat.completions.create(
+    model=MODEL,
+    messages=messages,
+    tools=tools,
+    tool_choice="auto",
+    temperature=0.0,
+)
+call = resp.choices[0].message.tool_calls[0]
+args = call.function.arguments  # JSON string
+print(args)
+```
+
+Example output (truncated):
+```json
+{
+  "name": "Alice Johnson",
+  "email": "alice@example.com",
+  "phone": "+1-415-555-1212",
+  "location": "San Francisco",
+  "age": 29
+}
+```
+
+---
+
+## Demo
+
+- Notebook: `Conversation_Management_and_Extraction.ipynb` (run end-to-end for full outputs)
+- Colab: Open the notebook in Google Colab and Run all
+- Screenshots: (optional) Add to `docs/screenshots/` and reference here
+
+---
+
+## Evaluation & Impact
+
+This project showcases:
+- **ML/AI Engineering**: Conversation state design, summarization strategies, token/latency control
+- **API Integration**: Groq API via OpenAI-compatible SDK, function/tool calling
+- **Data Handling**: Schema definition, structured extraction, minimal validation
+- **Software Craft**: Clean, readable code; reproducible notebook; version-controlled workflow
+- **Product Mindset**: Demonstrates how to build durable-assistant foundations that scale
+
+---
+
+## Future Improvements
+
+- Advanced memory: vector-based retrieval (RAG) + hybrid summaries
+- Robust schema validation (Pydantic / JSON Schema validators)
+- Observability: structured logging, tracing, token/cost dashboards
+- Eval harness: golden tests for summarization & extraction accuracy
+- Streaming responses; retries/backoff; rate-limit handling
+- Packaging: CLI wrapper or lightweight API service
+
+---
+
+
 
